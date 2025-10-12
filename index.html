@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRITnomicSystem - Gaming Economy</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo-section">
+                <h1 class="logo">IRIT<span>nomic</span>System</h1>
+                <p class="tagline">Freedom Through Frugality</p>
+            </div>
+            <div class="wallet-section">
+                <button id="connectWallet" class="connect-btn">🎮 CONNECT WALLET</button>
+                <div id="walletInfo" class="wallet-info hidden">
+                    <div class="wallet-address" id="walletAddress"></div>
+                    <div class="balances">
+                        <div class="balance-item">
+                            <span class="token-symbol">⛽</span>
+                            <span id="gasBalance">0</span> GAS
+                        </div>
+                        <div class="balance-item">
+                            <span class="token-symbol">🪙</span>
+                            <span id="bgsBalance">0</span> BGS
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <div class="card">
+                <div class="card-header">
+                    <h2>🚀 STAKING VAULT</h2>
+                    <div class="card-badge" id="apyBadge">10% APY • 1 YEAR LOCK</div>
+                </div>
+                <div class="card-content">
+                    <div class="input-group">
+                        <input type="number" id="stakeAmount" placeholder="Enter GAS amount">
+                        <span class="input-suffix">GAS</span>
+                    </div>
+                    <button id="stakeBtn" class="action-btn primary">STAKE GAS</button>
+                    
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>Your Stake</label>
+                            <span id="userStake">0 GAS</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Your Share</label>
+                            <span id="userShare">0%</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Total Staked</label>
+                            <span id="totalStaked">0 GAS</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Pending Rewards</label>
+                            <span id="pendingRewards">0 BGS</span>
+                        </div>
+                    </div>
+                    
+                    <button id="withdrawRewardsBtn" class="action-btn secondary">WITHDRAW REWARDS</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>🔥 RITUAL BURN</h2>
+                    <div class="card-badge">DEFLATIONARY</div>
+                </div>
+                <div class="card-content">
+                    <div class="input-group">
+                        <input type="number" id="burnGasAmount" placeholder="GAS amount to burn">
+                        <span class="input-suffix">GAS</span>
+                    </div>
+                    <button id="burnGasBtn" class="action-btn burn">IGNITE BURN</button>
+                    <p class="info-text">"Semakin sedikit yang beredar, semakin bernilai yang tersisa"</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>♻️ BGS RECYCLE</h2>
+                    <div class="card-badge">VOLUNTARY 3%</div>
+                </div>
+                <div class="card-content">
+                    <div class="input-group">
+                        <input type="number" id="recycleBgsAmount" placeholder="BGS amount to recycle">
+                        <span class="input-suffix">BGS</span>
+                    </div>
+                    <button id="recycleBgsBtn" class="action-btn recycle">RETURN TO POOL</button>
+                    <p class="info-text">Support ecosystem growth</p>
+                </div>
+            </div>
+        </main>
+
+        <div class="network-info">
+            <div class="network-status">
+                <span class="status-dot" id="networkDot"></span>
+                <span id="networkName">Disconnected</span>
+            </div>
+            <div class="contract-links">
+                <a href="https://testnet.bscscan.com/address/0xF5Cd132Da2F0EC2150E4C0Ac5a2A9473649DF307" target="_blank">GAS Contract</a>
+                <a href="https://testnet.bscscan.com/address/0x34897515163C21f9eA0600A3d0308E1430404f55" target="_blank">BGS Contract</a>
+                <a href="https://testnet.bscscan.com/address/0xc4079F735425002312c3B60A66cff56576A34a44" target="_blank">Staking Contract</a>
+            </div>
+        </div>
+
+        <div id="status" class="status hidden"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script src="contracts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
