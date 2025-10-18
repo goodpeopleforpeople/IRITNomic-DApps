@@ -1,4 +1,4 @@
-// app.js - DEBUG VERSION (FULL)
+// app.js - FULL VERSION
 class IritnomicDapp {
     constructor() {
         this.web3 = null;
@@ -17,16 +17,21 @@ class IritnomicDapp {
             console.log('🚀 Initializing IRITnomic DApp...');
             this.showStatus('Initializing DApp...', 'info');
             
-            // Step-by-step initialization dengan delay untuk debugging
+            // Step 1: Load Web3 first
             console.log('1. Loading Web3...');
             await this.loadWeb3();
             
-            console.log('2. Loading Contracts...');
-            await this.loadContracts();
+            // Step 2: Load contracts ONLY if web3 is available
+            if (this.web3) {
+                console.log('2. Loading Contracts...');
+                await this.loadContracts();
+            }
             
+            // Step 3: Always load event listeners
             console.log('3. Loading Event Listeners...');
             this.loadEventListeners();
             
+            // Step 4: Load data if connected
             console.log('4. Checking Connection...');
             if (this.isConnected && this.areContractsLoaded()) {
                 console.log('5. Loading Wallet Data...');
@@ -46,6 +51,14 @@ class IritnomicDapp {
     areContractsLoaded() {
         const loaded = this.contracts.gasToken && this.contracts.bgsToken && this.contracts.staking;
         console.log('📋 Contracts loaded check:', loaded);
+        
+        if (!loaded) {
+            console.log('❌ Missing contracts:');
+            console.log('- gasToken:', !!this.contracts.gasToken);
+            console.log('- bgsToken:', !!this.contracts.bgsToken); 
+            console.log('- staking:', !!this.contracts.staking);
+        }
+        
         return loaded;
     }
 
@@ -75,9 +88,6 @@ class IritnomicDapp {
                     this.showStatus('Please connect your wallet', 'info');
                 }
 
-                // Setup event listeners
-                this.setupEventListeners();
-
             } catch (error) {
                 console.error('❌ Web3 initialization error:', error);
                 this.showStatus('Web3 error: ' + error.message, 'error');
@@ -88,43 +98,24 @@ class IritnomicDapp {
         }
     }
 
-    setupEventListeners() {
-        if (!window.ethereum) return;
-        
-        window.ethereum.on('accountsChanged', (accounts) => {
-            console.log('🔄 Accounts changed:', accounts);
-            this.handleAccountsChanged(accounts);
-        });
-
-        window.ethereum.on('chainChanged', (chainId) => {
-            console.log('🔄 Chain changed:', chainId);
-            window.location.reload();
-        });
-    }
-
-    handleAccountsChanged(accounts) {
-        this.account = accounts[0] || null;
-        this.isConnected = !!this.account;
-        console.log('📝 Account updated:', this.account);
-        this.updateConnectionStatus(this.isConnected);
-        
-        if (this.isConnected && this.areContractsLoaded()) {
-            this.loadWalletData();
-        } else {
-            this.resetUI();
-        }
-    }
-
     async loadContracts() {
         if (!this.web3) {
             console.error('❌ Web3 not available for contract loading');
+            this.showStatus('Web3 not available', 'error');
             return;
         }
 
         try {
-            console.log('📄 Loading contracts...');
+            console.log('📄 Starting contract loading...');
             
-            // Initialize basic contracts without complex validation
+            // Check if ABIs are available
+            if (!GAS_ABI || !BGS_ABI || !STAKING_ABI) {
+                throw new Error('Contract ABIs not defined');
+            }
+            
+            console.log('✅ ABIs available, creating contract instances...');
+            
+            // Create contract instances
             this.contracts = {
                 gasToken: new this.web3.eth.Contract(GAS_ABI, CONTRACT_ADDRESSES.GAS_TOKEN),
                 bgsToken: new this.web3.eth.Contract(BGS_ABI, CONTRACT_ADDRESSES.BGS_TOKEN),
@@ -133,9 +124,37 @@ class IritnomicDapp {
 
             console.log('✅ Contract instances created');
             
+            // Test contract connection
+            await this.testContractConnection();
+            
         } catch (error) {
             console.error('❌ Contract loading failed:', error);
             this.showStatus('Contract loading failed: ' + error.message, 'error');
+        }
+    }
+
+    async testContractConnection() {
+        try {
+            console.log('🔍 Testing contract connections...');
+            
+            // Test GAS token
+            const gasSymbol = await this.contracts.gasToken.methods.symbol().call();
+            console.log('✅ GAS Token:', gasSymbol);
+            
+            // Test BGS token  
+            const bgsSymbol = await this.contracts.bgsToken.methods.symbol().call();
+            console.log('✅ BGS Token:', bgsSymbol);
+            
+            // Test staking contract
+            const gasAddress = await this.contracts.staking.methods.GAS_TOKEN().call();
+            console.log('✅ Staking Contract - GAS Address:', gasAddress);
+            
+            console.log('🎉 All contracts connected successfully!');
+            this.showStatus('Contracts loaded successfully!', 'success');
+            
+        } catch (error) {
+            console.error('❌ Contract connection test failed:', error);
+            this.showStatus('Contract test failed: ' + error.message, 'error');
         }
     }
 
@@ -180,7 +199,13 @@ class IritnomicDapp {
             console.log('3. Updating connection status...');
             this.updateConnectionStatus(true);
             
-            console.log('4. Loading wallet data...');
+            // Load contracts if not already loaded
+            if (!this.areContractsLoaded()) {
+                console.log('4. Loading contracts...');
+                await this.loadContracts();
+            }
+            
+            console.log('5. Loading wallet data...');
             await this.loadWalletData();
             
             console.log('✅ Wallet connection completed');
@@ -244,11 +269,20 @@ class IritnomicDapp {
             document.getElementById('pendingRewards').textContent = 
                 this.formatNumber(this.web3.utils.fromWei(pendingRewards, 'ether')) + ' BGS';
 
+            // Load total staked
+            const totalStaked = await this.contracts.staking.methods.totalStaked().call();
+            document.getElementById('totalStaked').textContent = 
+                this.formatNumber(this.web3.utils.fromWei(totalStaked, 'ether')) + ' GAS';
+
             console.log('✅ Staking info loaded');
 
         } catch (error) {
             console.error('❌ Error loading staking info:', error);
-            // Don't show error for users who haven't staked
+            // Set default values if user hasn't staked
+            document.getElementById('userStake').textContent = '0 GAS';
+            document.getElementById('userShare').textContent = '0%';
+            document.getElementById('pendingRewards').textContent = '0 BGS';
+            document.getElementById('totalStaked').textContent = '0 GAS';
         }
     }
 
@@ -279,6 +313,9 @@ class IritnomicDapp {
 
             this.showStatus(`Staked ${amount} GAS successfully!`, 'success');
             await this.loadWalletData();
+            
+            // Clear input
+            document.getElementById('stakeAmount').value = '';
             
         } catch (error) {
             console.error('❌ Staking error:', error);
@@ -328,6 +365,9 @@ class IritnomicDapp {
             this.showStatus(`Burned ${amount} GAS!`, 'success');
             await this.loadWalletData();
             
+            // Clear input
+            document.getElementById('burnGasAmount').value = '';
+            
         } catch (error) {
             console.error('❌ Burn error:', error);
             this.showStatus('Burn failed: ' + this.getUserFriendlyError(error), 'error');
@@ -362,6 +402,9 @@ class IritnomicDapp {
             this.showStatus(`Recycled ${amount} BGS!`, 'success');
             await this.loadWalletData();
             
+            // Clear input
+            document.getElementById('recycleBgsAmount').value = '';
+            
         } catch (error) {
             console.error('❌ Recycle error:', error);
             this.showStatus('Recycle failed: ' + this.getUserFriendlyError(error), 'error');
@@ -391,8 +434,11 @@ class IritnomicDapp {
         if (message.includes('insufficient funds')) {
             return 'Insufficient balance';
         }
+        if (message.includes('execution reverted')) {
+            return 'Transaction failed';
+        }
         
-        return message;
+        return message.length > 100 ? message.substring(0, 100) + '...' : message;
     }
 
     updateConnectionStatus(connected) {
@@ -475,6 +521,8 @@ window.addEventListener('load', () => {
     console.log('Window.ethereum available:', !!window.ethereum);
     console.log('Web3 available:', !!window.Web3);
     console.log('GAS_ABI available:', !!window.GAS_ABI);
+    console.log('BGS_ABI available:', !!window.BGS_ABI);
+    console.log('STAKING_ABI available:', !!window.STAKING_ABI);
     console.log('CONTRACT_ADDRESSES available:', !!window.CONTRACT_ADDRESSES);
     
     window.iritnomicDapp = new IritnomicDapp();
