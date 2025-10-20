@@ -1,46 +1,34 @@
-// app.js - FULL VERSION
+// app.js - UI MANAGEMENT & WALLET INTEGRATION
 class IritnomicDapp {
     constructor() {
         this.web3 = null;
         this.account = null;
         this.contracts = {};
+        this.manager = null;
         this.isConnected = false;
         this.isInitialized = false;
         
-        console.log('🔄 DApp Constructor Called');
-        this.showStatus('Starting DApp...', 'info');
         this.init();
     }
 
     async init() {
         try {
             console.log('🚀 Initializing IRITnomic DApp...');
-            this.showStatus('Initializing DApp...', 'info');
             
-            // Step 1: Load Web3 first
-            console.log('1. Loading Web3...');
+            // Step-by-step initialization
             await this.loadWeb3();
-            
-            // Step 2: Load contracts ONLY if web3 is available
-            if (this.web3) {
-                console.log('2. Loading Contracts...');
-                await this.loadContracts();
-            }
-            
-            // Step 3: Always load event listeners
-            console.log('3. Loading Event Listeners...');
+            await this.loadContracts();
+            this.initializeManager();
             this.loadEventListeners();
             
-            // Step 4: Load data if connected
-            console.log('4. Checking Connection...');
-            if (this.isConnected && this.areContractsLoaded()) {
-                console.log('5. Loading Wallet Data...');
+            // Auto-connect if wallet was previously connected
+            if (this.isConnected && this.areContractsReady()) {
                 await this.loadWalletData();
             }
             
             this.isInitialized = true;
             console.log('✅ DApp initialized successfully');
-            this.showStatus('DApp ready - Connect your wallet to start', 'success');
+            this.showStatus('DApp ready - Connect your wallet to start', 'info');
             
         } catch (error) {
             console.error('❌ Initialization failed:', error);
@@ -48,168 +36,205 @@ class IritnomicDapp {
         }
     }
 
-    areContractsLoaded() {
-        const loaded = this.contracts.gasToken && this.contracts.bgsToken && this.contracts.staking;
-        console.log('📋 Contracts loaded check:', loaded);
-        
-        if (!loaded) {
-            console.log('❌ Missing contracts:');
-            console.log('- gasToken:', !!this.contracts.gasToken);
-            console.log('- bgsToken:', !!this.contracts.bgsToken); 
-            console.log('- staking:', !!this.contracts.staking);
-        }
-        
-        return loaded;
+    // ✅ Check if contracts are fully loaded and ready
+    areContractsReady() {
+        return this.contracts && 
+               this.contracts.gasToken && 
+               this.contracts.bgsToken && 
+               this.contracts.staking;
     }
 
     async loadWeb3() {
-        console.log('🌐 Checking for Ethereum provider...');
-        
         if (window.ethereum) {
-            console.log('✅ MetaMask/Wallet detected');
-            
             try {
                 this.web3 = new Web3(window.ethereum);
-                console.log('🔗 Web3 instance created');
+                console.log('🔗 Web3 initialized');
 
-                // Check if we're already connected
-                console.log('📱 Checking existing accounts...');
-                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-                console.log('Found accounts:', accounts);
+                // Check current network
+                const chainId = await this.web3.eth.getChainId();
+                console.log('🌐 Current chain ID:', chainId);
+                
+                if (chainId !== 97) {
+                    this.showStatus('Please switch to BSC Testnet (ChainId: 97)', 'error');
+                    this.updateConnectionStatus(false);
+                    return;
+                }
+
+                // Check existing accounts
+                const accounts = await this.web3.eth.getAccounts();
+                console.log('📱 Found accounts:', accounts);
                 
                 if (accounts.length > 0) {
                     this.account = accounts[0];
                     this.isConnected = true;
-                    console.log('✅ Auto-connected to account:', this.account);
                     this.updateConnectionStatus(true);
-                    this.showStatus('Wallet auto-connected!', 'success');
-                } else {
-                    console.log('ℹ️ No accounts found, user needs to connect');
-                    this.showStatus('Please connect your wallet', 'info');
+                    console.log('✅ Auto-connected to account:', this.account);
                 }
+
+                // Setup event listeners
+                this.setupEventListeners();
 
             } catch (error) {
                 console.error('❌ Web3 initialization error:', error);
-                this.showStatus('Web3 error: ' + error.message, 'error');
+                this.showStatus('Failed to initialize Web3: ' + error.message, 'error');
             }
         } else {
-            console.error('❌ No Ethereum provider found');
-            this.showStatus('Please install MetaMask!', 'error');
+            this.showStatus('Please install MetaMask or another Web3 wallet!', 'error');
         }
     }
 
     async loadContracts() {
         if (!this.web3) {
-            console.error('❌ Web3 not available for contract loading');
-            this.showStatus('Web3 not available', 'error');
-            return;
+            throw new Error('Web3 not initialized');
         }
 
         try {
-            console.log('📄 Starting contract loading...');
+            console.log('📄 Loading contracts...');
             
-            // Check if ABIs are available
+            // Validate we have the required ABIs and addresses
             if (!GAS_ABI || !BGS_ABI || !STAKING_ABI) {
-                throw new Error('Contract ABIs not defined');
+                throw new Error('Contract ABIs not found');
             }
-            
-            console.log('✅ ABIs available, creating contract instances...');
-            
-            // Create contract instances
+
+            if (!CONTRACT_ADDRESSES.GAS_TOKEN || !CONTRACT_ADDRESSES.BGS_TOKEN || !CONTRACT_ADDRESSES.STAKING) {
+                throw new Error('Contract addresses not defined');
+            }
+
+            // Initialize contract instances
             this.contracts = {
                 gasToken: new this.web3.eth.Contract(GAS_ABI, CONTRACT_ADDRESSES.GAS_TOKEN),
                 bgsToken: new this.web3.eth.Contract(BGS_ABI, CONTRACT_ADDRESSES.BGS_TOKEN),
                 staking: new this.web3.eth.Contract(STAKING_ABI, CONTRACT_ADDRESSES.STAKING)
             };
 
-            console.log('✅ Contract instances created');
-            
-            // Test contract connection
-            await this.testContractConnection();
+            console.log('📝 Contract instances created');
+
+            // Test contract connections with timeout
+            await Promise.race([
+                this.testContractConnections(),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Contract connection timeout')), 10000)
+                )
+            ]);
+
+            console.log('✅ All contracts loaded successfully');
             
         } catch (error) {
             console.error('❌ Contract loading failed:', error);
-            this.showStatus('Contract loading failed: ' + error.message, 'error');
+            throw new Error(`Failed to load contracts: ${error.message}`);
         }
     }
 
-    async testContractConnection() {
+    async testContractConnections() {
         try {
-            console.log('🔍 Testing contract connections...');
-            
-            // Test GAS token
-            const gasSymbol = await this.contracts.gasToken.methods.symbol().call();
+            // Test basic contract calls
+            const [gasSymbol, bgsSymbol, stakingGas] = await Promise.all([
+                this.contracts.gasToken.methods.symbol().call(),
+                this.contracts.bgsToken.methods.symbol().call(),
+                this.contracts.staking.methods.GAS_TOKEN().call()
+            ]);
+
             console.log('✅ GAS Token:', gasSymbol);
-            
-            // Test BGS token  
-            const bgsSymbol = await this.contracts.bgsToken.methods.symbol().call();
             console.log('✅ BGS Token:', bgsSymbol);
-            
-            // Test staking contract
-            const gasAddress = await this.contracts.staking.methods.GAS_TOKEN().call();
-            console.log('✅ Staking Contract - GAS Address:', gasAddress);
-            
-            console.log('🎉 All contracts connected successfully!');
-            this.showStatus('Contracts loaded successfully!', 'success');
+            console.log('✅ Staking GAS Address:', stakingGas);
             
         } catch (error) {
             console.error('❌ Contract connection test failed:', error);
-            this.showStatus('Contract test failed: ' + error.message, 'error');
+            throw new Error(`Contract connection failed: ${error.message}`);
         }
+    }
+
+    initializeManager() {
+        if (this.web3 && this.areContractsReady()) {
+            this.manager = new IritnomicManager(this.web3, this.contracts, this.account);
+            console.log('👨‍💼 Manager initialized');
+        }
+    }
+
+    setupEventListeners() {
+        window.ethereum.on('accountsChanged', (accounts) => {
+            this.handleAccountsChanged(accounts);
+        });
+
+        window.ethereum.on('chainChanged', (chainId) => {
+            this.handleChainChanged(chainId);
+        });
+
+        window.ethereum.on('disconnect', (error) => {
+            console.log('🔴 Wallet disconnected:', error);
+            this.handleWalletDisconnect();
+        });
+    }
+
+    handleAccountsChanged(accounts) {
+        console.log('🔄 Accounts changed:', accounts);
+        this.account = accounts[0] || null;
+        this.isConnected = !!this.account;
+        this.updateConnectionStatus(this.isConnected);
+        
+        if (this.isConnected && this.areContractsReady()) {
+            this.manager.account = this.account; // Update manager account
+            this.loadWalletData();
+        } else {
+            this.resetUI();
+        }
+    }
+
+    handleChainChanged(chainId) {
+        console.log('🔄 Chain changed:', chainId);
+        const newChainId = parseInt(chainId, 16);
+        
+        if (newChainId === 97) {
+            this.showStatus('Connected to BSC Testnet', 'success');
+            if (this.account && this.areContractsReady()) {
+                this.loadWalletData();
+            }
+        } else {
+            this.showStatus('Please switch to BSC Testnet (ChainId: 97)', 'error');
+            this.updateConnectionStatus(false);
+        }
+    }
+
+    handleWalletDisconnect() {
+        console.log('🔴 Wallet disconnected');
+        this.isConnected = false;
+        this.account = null;
+        this.updateConnectionStatus(false);
+        this.resetUI();
     }
 
     loadEventListeners() {
-        console.log('🎯 Setting up UI event listeners...');
-        
         document.getElementById('connectWallet').addEventListener('click', () => this.connectWallet());
-        document.getElementById('stakeBtn').addEventListener('click', () => this.stake());
-        document.getElementById('withdrawRewardsBtn').addEventListener('click', () => this.withdrawRewards());
-        document.getElementById('burnGasBtn').addEventListener('click', () => this.burnGas());
-        document.getElementById('recycleBgsBtn').addEventListener('click', () => this.recycleBgs());
+        document.getElementById('stakeBtn').addEventListener('click', () => this.handleStake());
+        document.getElementById('withdrawRewardsBtn').addEventListener('click', () => this.handleWithdrawRewards());
+        document.getElementById('burnGasBtn').addEventListener('click', () => this.handleBurnGas());
+        document.getElementById('recycleBgsBtn').addEventListener('click', () => this.handleRecycleBgs());
         
-        console.log('✅ Event listeners loaded');
+        console.log('🎯 Event listeners loaded');
     }
 
     async connectWallet() {
-        console.log('🎮 Connect Wallet button clicked');
-        
-        if (!window.ethereum) {
-            this.showStatus('Please install MetaMask first!', 'error');
-            return;
-        }
-
         try {
-            this.showStatus('🔄 Connecting to wallet...', 'info');
-            console.log('1. Requesting accounts...');
+            this.showStatus('Connecting wallet...', 'info');
             
-            // Request account access
-            const accounts = await window.ethereum.request({ 
+            await window.ethereum.request({ 
                 method: 'eth_requestAccounts' 
             });
             
-            console.log('2. Accounts received:', accounts);
-            
-            if (accounts.length === 0) {
-                throw new Error('No accounts received');
-            }
-            
+            const accounts = await this.web3.eth.getAccounts();
             this.account = accounts[0];
             this.isConnected = true;
             
-            console.log('3. Updating connection status...');
-            this.updateConnectionStatus(true);
-            
-            // Load contracts if not already loaded
-            if (!this.areContractsLoaded()) {
-                console.log('4. Loading contracts...');
-                await this.loadContracts();
+            // Update manager with new account
+            if (this.manager) {
+                this.manager.account = this.account;
             }
             
-            console.log('5. Loading wallet data...');
+            this.updateConnectionStatus(true);
             await this.loadWalletData();
             
-            console.log('✅ Wallet connection completed');
-            this.showStatus('🎉 Wallet connected successfully!', 'success');
+            this.showStatus('Wallet connected successfully!', 'success');
+            console.log('✅ Wallet connected:', this.account);
             
         } catch (error) {
             console.error('❌ Wallet connection error:', error);
@@ -217,79 +242,48 @@ class IritnomicDapp {
             if (error.code === 4001) {
                 this.showStatus('User denied wallet connection', 'error');
             } else {
-                this.showStatus('Connection failed: ' + error.message, 'error');
+                this.showStatus('Wallet connection failed: ' + error.message, 'error');
             }
         }
     }
 
     async loadWalletData() {
-        if (!this.account || !this.areContractsLoaded()) {
-            console.log('⏸️ Skipping wallet data load - missing account or contracts');
+        if (!this.account || !this.areContractsReady() || !this.manager) {
+            console.log('⏳ Skipping wallet data load - prerequisites not met');
             return;
         }
 
         try {
             console.log('📊 Loading wallet data...');
+            const data = await this.manager.getWalletData();
             
-            // Load token balances
-            const gasBalance = await this.contracts.gasToken.methods.balanceOf(this.account).call();
-            const bgsBalance = await this.contracts.bgsToken.methods.balanceOf(this.account).call();
+            // Update UI with wallet data
+            document.getElementById('gasBalance').textContent = this.formatNumber(data.balances.gas);
+            document.getElementById('bgsBalance').textContent = this.formatNumber(data.balances.bgs);
+            
+            document.getElementById('userStake').textContent = this.formatNumber(data.staking.userStake) + ' GAS';
+            document.getElementById('userShare').textContent = data.staking.userShare + '%';
+            document.getElementById('totalStaked').textContent = this.formatNumber(data.staking.totalStaked) + ' GAS';
+            document.getElementById('pendingRewards').textContent = this.formatNumber(data.staking.pendingRewards) + ' BGS';
+            
+            document.getElementById('apyBadge').textContent = 
+                data.staking.currentAPY + '% APY • ' + data.staking.totalStakers + ' STAKERS';
 
-            document.getElementById('gasBalance').textContent = 
-                this.formatNumber(this.web3.utils.fromWei(gasBalance, 'ether'));
-            document.getElementById('bgsBalance').textContent = 
-                this.formatNumber(this.web3.utils.fromWei(bgsBalance, 'ether'));
-
-            console.log('✅ Balances loaded - GAS:', gasBalance, 'BGS:', bgsBalance);
-
-            // Load staking info
-            await this.loadStakingInfo();
             this.updateWalletInfo();
-
             console.log('✅ Wallet data loaded successfully');
             
         } catch (error) {
             console.error('❌ Error loading wallet data:', error);
-            this.showStatus('Failed to load wallet data', 'error');
+            // Don't show error for "no stake" which is normal for new users
+            if (!error.message.includes('User has no stake')) {
+                this.showStatus('Failed to load wallet data: ' + error.message, 'error');
+            }
         }
     }
 
-    async loadStakingInfo() {
-        try {
-            console.log('📈 Loading staking info...');
-            
-            const stakeInfo = await this.contracts.staking.methods.getUserStakeInfo(this.account).call();
-            const [amount, stakedAt, unlockTime, pendingRewards, totalEarned, userShare] = stakeInfo;
-
-            // Update UI
-            document.getElementById('userStake').textContent = 
-                this.formatNumber(this.web3.utils.fromWei(amount, 'ether')) + ' GAS';
-            document.getElementById('userShare').textContent = 
-                (userShare / 100).toFixed(2) + '%';
-            document.getElementById('pendingRewards').textContent = 
-                this.formatNumber(this.web3.utils.fromWei(pendingRewards, 'ether')) + ' BGS';
-
-            // Load total staked
-            const totalStaked = await this.contracts.staking.methods.totalStaked().call();
-            document.getElementById('totalStaked').textContent = 
-                this.formatNumber(this.web3.utils.fromWei(totalStaked, 'ether')) + ' GAS';
-
-            console.log('✅ Staking info loaded');
-
-        } catch (error) {
-            console.error('❌ Error loading staking info:', error);
-            // Set default values if user hasn't staked
-            document.getElementById('userStake').textContent = '0 GAS';
-            document.getElementById('userShare').textContent = '0%';
-            document.getElementById('pendingRewards').textContent = '0 BGS';
-            document.getElementById('totalStaked').textContent = '0 GAS';
-        }
-    }
-
-    async stake() {
-        console.log('💰 Stake button clicked');
-        
-        if (!this.validatePreconditions()) return;
+    // 🎯 TRANSACTION HANDLERS
+    async handleStake() {
+        if (!this.validateReadyState()) return;
 
         const amount = document.getElementById('stakeAmount').value;
         if (!amount || amount <= 0) {
@@ -298,55 +292,37 @@ class IritnomicDapp {
         }
 
         try {
-            const amountWei = this.web3.utils.toWei(amount, 'ether');
+            this.showStatus('Processing stake transaction...', 'info');
+            await this.manager.stake(amount);
             
-            this.showStatus('Approving GAS tokens...', 'info');
-            
-            await this.contracts.gasToken.methods
-                .approve(CONTRACT_ADDRESSES.STAKING, amountWei)
-                .send({ from: this.account });
-                
-            this.showStatus('Staking GAS...', 'info');
-            
-            await this.contracts.staking.methods.stake(amountWei)
-                .send({ from: this.account });
-
-            this.showStatus(`Staked ${amount} GAS successfully!`, 'success');
+            this.showStatus(`Successfully staked ${amount} GAS!`, 'success');
             await this.loadWalletData();
-            
-            // Clear input
             document.getElementById('stakeAmount').value = '';
-            
+
         } catch (error) {
             console.error('❌ Staking error:', error);
-            this.showStatus('Staking failed: ' + this.getUserFriendlyError(error), 'error');
+            this.showStatus('Staking failed: ' + this.manager.getUserFriendlyError(error), 'error');
         }
     }
 
-    async withdrawRewards() {
-        console.log('💸 Withdraw rewards clicked');
-        
-        if (!this.validatePreconditions()) return;
+    async handleWithdrawRewards() {
+        if (!this.validateReadyState()) return;
 
         try {
             this.showStatus('Withdrawing rewards...', 'info');
+            await this.manager.withdrawRewards();
             
-            await this.contracts.staking.methods.withdrawRewards()
-                .send({ from: this.account });
-
-            this.showStatus('Rewards withdrawn!', 'success');
+            this.showStatus('Rewards withdrawn successfully!', 'success');
             await this.loadWalletData();
 
         } catch (error) {
             console.error('❌ Withdraw error:', error);
-            this.showStatus('Withdraw failed: ' + this.getUserFriendlyError(error), 'error');
+            this.showStatus('Withdraw failed: ' + this.manager.getUserFriendlyError(error), 'error');
         }
     }
 
-    async burnGas() {
-        console.log('🔥 Burn GAS clicked');
-        
-        if (!this.validatePreconditions()) return;
+    async handleBurnGas() {
+        if (!this.validateReadyState()) return;
 
         const amount = document.getElementById('burnGasAmount').value;
         if (!amount || amount <= 0) {
@@ -355,29 +331,21 @@ class IritnomicDapp {
         }
 
         try {
-            const amountWei = this.web3.utils.toWei(amount, 'ether');
+            this.showStatus('Burning GAS tokens...', 'info');
+            await this.manager.burnGas(amount);
             
-            this.showStatus('Burning GAS...', 'info');
-            
-            await this.contracts.gasToken.methods.burn(amountWei)
-                .send({ from: this.account });
-
-            this.showStatus(`Burned ${amount} GAS!`, 'success');
+            this.showStatus(`Burned ${amount} GAS successfully!`, 'success');
             await this.loadWalletData();
-            
-            // Clear input
             document.getElementById('burnGasAmount').value = '';
-            
+
         } catch (error) {
             console.error('❌ Burn error:', error);
-            this.showStatus('Burn failed: ' + this.getUserFriendlyError(error), 'error');
+            this.showStatus('Burn failed: ' + this.manager.getUserFriendlyError(error), 'error');
         }
     }
 
-    async recycleBgs() {
-        console.log('♻️ Recycle BGS clicked');
-        
-        if (!this.validatePreconditions()) return;
+    async handleRecycleBgs() {
+        if (!this.validateReadyState()) return;
 
         const amount = document.getElementById('recycleBgsAmount').value;
         if (!amount || amount <= 0) {
@@ -386,82 +354,52 @@ class IritnomicDapp {
         }
 
         try {
-            const amountWei = this.web3.utils.toWei(amount, 'ether');
-
-            this.showStatus('Approving BGS...', 'info');
+            this.showStatus('Recycling BGS to pool...', 'info');
+            await this.manager.recycleBgs(amount);
             
-            await this.contracts.bgsToken.methods
-                .approve(CONTRACT_ADDRESSES.STAKING, amountWei)
-                .send({ from: this.account });
-                
-            this.showStatus('Recycling BGS...', 'info');
-            
-            await this.contracts.staking.methods.returnBGSToPool(amountWei)
-                .send({ from: this.account });
-
-            this.showStatus(`Recycled ${amount} BGS!`, 'success');
+            this.showStatus(`Recycled ${amount} BGS to pool!`, 'success');
             await this.loadWalletData();
-            
-            // Clear input
             document.getElementById('recycleBgsAmount').value = '';
-            
+
         } catch (error) {
             console.error('❌ Recycle error:', error);
-            this.showStatus('Recycle failed: ' + this.getUserFriendlyError(error), 'error');
+            this.showStatus('Recycle failed: ' + this.manager.getUserFriendlyError(error), 'error');
         }
     }
 
-    validatePreconditions() {
+    // ✅ VALIDATION FUNCTIONS
+    validateReadyState() {
         if (!this.isConnected) {
             this.showStatus('Please connect your wallet first', 'error');
             return false;
         }
         
-        if (!this.areContractsLoaded()) {
-            this.showStatus('Contracts not ready', 'error');
+        if (!this.areContractsReady()) {
+            this.showStatus('Contracts not ready. Please wait...', 'error');
+            return false;
+        }
+        
+        if (!this.manager) {
+            this.showStatus('System not initialized. Please refresh page', 'error');
             return false;
         }
         
         return true;
     }
 
-    getUserFriendlyError(error) {
-        const message = error.message || error.toString();
-        
-        if (message.includes('user denied transaction')) {
-            return 'Transaction cancelled';
-        }
-        if (message.includes('insufficient funds')) {
-            return 'Insufficient balance';
-        }
-        if (message.includes('execution reverted')) {
-            return 'Transaction failed';
-        }
-        
-        return message.length > 100 ? message.substring(0, 100) + '...' : message;
-    }
-
+    // 🎨 UI MANAGEMENT FUNCTIONS
     updateConnectionStatus(connected) {
-        console.log('🔄 Updating connection status:', connected);
-        
         const networkDot = document.getElementById('networkDot');
         const networkName = document.getElementById('networkName');
         const connectBtn = document.getElementById('connectWallet');
         const walletInfo = document.getElementById('walletInfo');
 
         if (connected) {
-            console.log('✅ Setting status: Connected');
             networkDot.className = 'status-dot connected';
             networkName.textContent = 'BSC Testnet Connected';
             connectBtn.classList.add('hidden');
             walletInfo.classList.remove('hidden');
-            
-            if (this.account) {
-                document.getElementById('walletAddress').textContent = 
-                    this.account.substring(0, 6) + '...' + this.account.substring(38);
-            }
         } else {
-            console.log('🔴 Setting status: Disconnected');
             networkDot.className = 'status-dot';
             networkName.textContent = 'Disconnected';
             connectBtn.classList.remove('hidden');
@@ -477,6 +415,8 @@ class IritnomicDapp {
         if (this.account) {
             connectBtn.classList.add('hidden');
             walletInfo.classList.remove('hidden');
+            document.getElementById('walletAddress').textContent = 
+                this.account.substring(0, 6) + '...' + this.account.substring(38);
         } else {
             connectBtn.classList.remove('hidden');
             walletInfo.classList.add('hidden');
@@ -484,13 +424,15 @@ class IritnomicDapp {
     }
 
     resetUI() {
-        console.log('🔄 Resetting UI to default state');
         document.getElementById('userStake').textContent = '0 GAS';
         document.getElementById('userShare').textContent = '0%';
         document.getElementById('totalStaked').textContent = '0 GAS';
         document.getElementById('pendingRewards').textContent = '0 BGS';
         document.getElementById('gasBalance').textContent = '0';
         document.getElementById('bgsBalance').textContent = '0';
+        document.getElementById('stakeAmount').value = '';
+        document.getElementById('burnGasAmount').value = '';
+        document.getElementById('recycleBgsAmount').value = '';
     }
 
     formatNumber(num) {
@@ -517,13 +459,6 @@ class IritnomicDapp {
 
 // Initialize app when page loads
 window.addEventListener('load', () => {
-    console.log('🖥️ Page fully loaded');
-    console.log('Window.ethereum available:', !!window.ethereum);
-    console.log('Web3 available:', !!window.Web3);
-    console.log('GAS_ABI available:', !!window.GAS_ABI);
-    console.log('BGS_ABI available:', !!window.BGS_ABI);
-    console.log('STAKING_ABI available:', !!window.STAKING_ABI);
-    console.log('CONTRACT_ADDRESSES available:', !!window.CONTRACT_ADDRESSES);
-    
+    console.log('🖥️ Page loaded, initializing DApp...');
     window.iritnomicDapp = new IritnomicDapp();
 });
