@@ -23,7 +23,7 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     padding: 20px;
-    background-image: 
+    background-image:
         radial-gradient(circle at 10% 20%, rgba(0, 255, 0, 0.05) 0%, transparent 20%),
         radial-gradient(circle at 90% 80%, rgba(0, 255, 136, 0.05) 0%, transparent 20%);
 }
